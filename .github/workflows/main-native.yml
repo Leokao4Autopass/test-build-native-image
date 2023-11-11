@@ -18,3 +18,13 @@ jobs:
           cache: 'gradle'
           components: 'native-image'
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: show Graalvm version
+        run: |
+          echo "GRAALVM_HOME: $GRAALVM_HOME"
+          echo "JAVA_HOME: $JAVA_HOME"
+          java --version
+          native-image --version
+      - name: 'Build'
+        run: |
+          ./gradlew clean build -Dquarkus.package.type=native
+          ls build
