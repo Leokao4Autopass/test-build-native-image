@@ -1,0 +1,23 @@
+name: Test Pull Request
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+    test:
+      runs-on: self-hosted
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+        - uses: graalvm/setup-graalvm@v1
+          with:
+            distribution: graalvm-community
+            java-version: '17'
+            cache: 'gradle'
+        - name: Run Gradle tests
+          run: |
+            ./gradlew test

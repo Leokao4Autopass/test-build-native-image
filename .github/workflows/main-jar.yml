@@ -1,0 +1,107 @@
+name: Build Jar and Build Image and Push to Google Artifact Registry
+
+on:
+  push:
+    branches: ["develop"]
+    tags:
+      - 'main-v**'
+      - '!main-v**-native'
+
+permissions:
+  contents: read
+
+jobs:
+    test:
+      runs-on: self-hosted
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+        - uses: graalvm/setup-graalvm@v1
+          with:
+            distribution: graalvm-community
+            java-version: '17'
+            cache: 'gradle'
+        - name: Run Gradle tests
+          run: |
+            ./gradlew test
+
+    build-jar:
+      runs-on: self-hosted
+      if: |
+        github.event_name == 'push' 
+      needs: test
+      steps:
+        - uses: actions/checkout@v4
+        - uses: graalvm/setup-graalvm@v1
+          with:
+            distribution: graalvm-community
+            java-version: '17'
+            cache: 'gradle'
+        - name: show Graalvm version
+          run: |
+            echo "GRAALVM_HOME: $GRAALVM_HOME"
+            echo "JAVA_HOME: $JAVA_HOME"
+            java --version
+            native-image --version
+        - name: Gradle build
+          run: |
+            cd web
+            ../gradlew clean build -Dquarkus.package.type=uber-jar -Dquarkus.profile=prod
+            ls build
+        - name: Upload the Jar used to build the docker image
+          uses: actions/upload-artifact@v3
+          with:
+            name: my-artifact
+            path: web/build/*-runner.jar
+
+    build-image-with-jar:
+      runs-on: self-hosted
+      permissions: #make sure we add permission to read and write package
+        contents: read
+        packages: write
+      needs: build-jar
+      env:
+        LOCATION: ${{ vars.ARTIFACT_REGISTRY_LOCATION }}
+        PROJECT_ID: ${{ vars.ARTIFACT_REGISTRY_PROJECT }}
+        REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}
+        IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+      steps:
+        - uses: actions/checkout@v3
+        - uses: actions/download-artifact@master
+          with:
+            name: my-artifact
+            path: web/build/app-runner.jar
+
+        - name: show artifact
+          run: |
+            ls web/build
+
+        - name: Login to GCP
+          uses: google-github-actions/auth@v1
+          with:
+            credentials_json: ${{ secrets.SERVICE_ACCOUNT_KEY }}
+        - name: Set up Cloud SDK
+          uses: google-github-actions/setup-gcloud@v1
+
+        - name: Set IMAGE_TAG
+          id: set-image-tag
+          run: |
+            if [[ $GITHUB_REF == 'refs/heads/develop' ]]; then
+              echo "IMAGE_TAG=latest" >> $GITHUB_ENV
+            else
+              echo "IMAGE_TAG=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+            fi
+
+        - name: Build Docker Image
+          env:
+            IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          run: |
+            cd web
+            docker build -f src/main/docker/Dockerfile.uber-jar -t $IMAGE_NAME:$IMAGE_TAG .
+        - name: Push Docker Image to Google Artifact Registry
+          env:
+            IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          run: |-
+            gcloud auth configure-docker $LOCATION-docker.pkg.dev --quiet
+            docker tag $IMAGE_NAME:$IMAGE_TAG $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$IMAGE_TAG 
+            docker push $LOCATION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$IMAGE_TAG
