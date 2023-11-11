@@ -18,6 +18,8 @@ jobs:
           cache: 'gradle'
           components: 'native-image'
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          distribution: graalvm-community
+
       - name: show Graalvm version
         run: |
           echo "GRAALVM_HOME: $GRAALVM_HOME"
