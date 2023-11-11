@@ -28,8 +28,7 @@ jobs:
             native-image --version
         - name: Gradle build
           run: |
-            cd web
-            ../gradlew clean build -Dquarkus.package.type=native -Dquarkus.profile=prod -Dquarkus.native.additional-build-args=-H:-UseContainerSupport
+            ./gradlew clean build -Dquarkus.package.type=native
             ls build
         - name: Upload the Native-image used to build the docker image
           uses: actions/upload-artifact@v3
